@@ -2,7 +2,8 @@ import sys
 from PyQt6.QtCore import Qt, QPoint, QTimer, QPropertyAnimation, QEasingCurve, pyqtSignal
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout, QFrame, QGraphicsOpacityEffect,
-    QDialog, QPushButton, QGridLayout, QScrollArea, QFileDialog, QCheckBox, QTabWidget
+    QDialog, QPushButton, QGridLayout, QScrollArea, QFileDialog, QCheckBox, QTabWidget,
+    QKeySequenceEdit
 )
 from PyQt6.QtGui import QFont, QColor, QCursor, QScreen, QIcon, QPixmap, QPainter, QPen, QFontDatabase
 
@@ -87,6 +88,9 @@ QDialog {
     border: 1px solid #313244;
     border-radius: 8px;
 }
+QLabel {
+    color: #cdd6f4;
+}
 QLabel#title {
     color: #89b4fa;
     font-size: 16px;
@@ -142,7 +146,7 @@ def create_status_icon(enabled):
     
     # 2. Draw 'සි' (Si) character in white
     painter.setPen(QColor("#ffffff"))
-    font = QFont("Segoe UI", 28, QFont.Weight.Bold)
+    font = QFont("Ubuntu", 28, QFont.Weight.Bold)
     painter.setFont(font)
     painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "සි")
     
@@ -178,7 +182,7 @@ class CandidateRow(QFrame):
         # Word text label
         self.word_text = QLabel("", self)
         self.word_text.setObjectName("word_text")
-        self.word_text.setFont(QFont("Segoe UI", 13))
+        self.word_text.setFont(QFont("Ubuntu", 13))
         
         layout.addWidget(self.num_badge)
         layout.addWidget(self.word_text)
@@ -193,7 +197,7 @@ class CandidateRow(QFrame):
         if family:
             self.word_text.setFont(QFont(family, 13))
         else:
-            self.word_text.setFont(QFont("Segoe UI", 13))
+            self.word_text.setFont(QFont("Ubuntu", 13))
 
     def set_active(self, active):
         if active:
@@ -214,7 +218,8 @@ class CandidateWindow(QWidget):
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnTopHint |
             Qt.WindowType.Tool |
-            Qt.WindowType.WindowDoesNotAcceptFocus
+            Qt.WindowType.WindowDoesNotAcceptFocus |
+            Qt.WindowType.X11BypassWindowManagerHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
@@ -298,7 +303,8 @@ class NotificationOSD(QWidget):
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnTopHint |
             Qt.WindowType.Tool |
-            Qt.WindowType.WindowDoesNotAcceptFocus
+            Qt.WindowType.WindowDoesNotAcceptFocus |
+            Qt.WindowType.X11BypassWindowManagerHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
@@ -352,6 +358,7 @@ class NotificationOSD(QWidget):
             text_color = "#f38ba8"
             
         self.title_label.setText(title)
+        self.subtitle_label.setText("Press Ctrl + Space to Toggle")
         
         style = OSD_STYLE.replace("%BORDER_COLOR%", border_color).replace("%TEXT_COLOR%", text_color)
         self.container.setStyleSheet(style)
@@ -362,6 +369,24 @@ class NotificationOSD(QWidget):
         self.show()
         
         self.timer.start(1200)
+
+    def show_dictation_message(self, title, text, border_color="rgba(137, 180, 250, 150)", text_color="#89b4fa", persistent=False):
+        self.timer.stop()
+        self.animation.stop()
+        
+        self.title_label.setText(title)
+        self.subtitle_label.setText(text)
+        
+        style = OSD_STYLE.replace("%BORDER_COLOR%", border_color).replace("%TEXT_COLOR%", text_color)
+        self.container.setStyleSheet(style)
+        
+        self.adjustSize()
+        self.center_on_screen()
+        self.opacity_effect.setOpacity(1.0)
+        self.show()
+        
+        if not persistent:
+            self.timer.start(1500)
 
     def center_on_screen(self):
         screen_geometry = QApplication.primaryScreen().geometry()
@@ -389,14 +414,19 @@ QLabel#lang_text {
     font-size: 13px;
     font-weight: bold;
 }
+QLabel#mic_icon {
+    font-size: 13px;
+}
 """
 
 class LanguageBar(QWidget):
     """
-    A tiny floating widget on the screen displaying 'සි' or 'EN'.
-    Clicking it toggles the input mode. It is draggable anywhere on the screen.
+    A tiny floating widget on the screen displaying 'සි' or 'EN' and a microphone icon.
+    Clicking the mode toggles typing. Clicking the microphone triggers voice dictation.
+    It is draggable anywhere on the screen.
     """
     clicked = pyqtSignal()
+    mic_clicked = pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -405,7 +435,8 @@ class LanguageBar(QWidget):
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnTopHint |
             Qt.WindowType.Tool |
-            Qt.WindowType.WindowDoesNotAcceptFocus
+            Qt.WindowType.WindowDoesNotAcceptFocus |
+            Qt.WindowType.X11BypassWindowManagerHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
@@ -417,13 +448,26 @@ class LanguageBar(QWidget):
         self.container.setStyleSheet(LANGBAR_STYLE)
         
         layout = QHBoxLayout(self.container)
-        layout.setContentsMargins(10, 6, 10, 6)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(6)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         self.label = QLabel("සි", self)
         self.label.setObjectName("lang_text")
-        self.label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        self.label.setFont(QFont("Ubuntu", 11, QFont.Weight.Bold))
         layout.addWidget(self.label)
+        
+        # Vertical separator line
+        self.separator = QFrame(self)
+        self.separator.setFrameShape(QFrame.Shape.VLine)
+        self.separator.setStyleSheet("color: rgba(137, 180, 250, 80);")
+        layout.addWidget(self.separator)
+        
+        self.mic_label = QLabel("🎙️", self)
+        self.mic_label.setObjectName("mic_icon")
+        self.mic_label.setFont(QFont("Ubuntu", 10))
+        self.mic_label.setStyleSheet("color: #a6adc8;") # grey by default
+        layout.addWidget(self.mic_label)
         
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -432,7 +476,7 @@ class LanguageBar(QWidget):
         self.drag_start_pos = QPoint()
         self.drag_position = QPoint()
         self.is_dragging = False
-        self.setFixedSize(50, 32)
+        self.setFixedSize(80, 32)
         
         self.position_default()
         self.show()
@@ -455,6 +499,17 @@ class LanguageBar(QWidget):
                 LANGBAR_STYLE.replace("#89b4fa", "#bac2de").replace("rgba(137, 180, 250, 150)", "rgba(180, 190, 254, 80)")
             )
 
+    def set_mic_state(self, state):
+        """
+        Updates the microphone icon color to represent idle, listening, or transcribing states.
+        """
+        if state == "listening":
+            self.mic_label.setStyleSheet("color: #f38ba8;") # soft red/pink
+        elif state == "transcribing":
+            self.mic_label.setStyleSheet("color: #f9e2af;") # soft yellow
+        else: # idle
+            self.mic_label.setStyleSheet("color: #a6adc8;") # grey
+
     # Draggable Window & Click Logic
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -474,7 +529,13 @@ class LanguageBar(QWidget):
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             if not self.is_dragging:
-                self.clicked.emit()
+                pos = event.position().toPoint()
+                # Check if click was on the mic icon
+                local_pos = self.mic_label.mapFrom(self, pos)
+                if self.mic_label.rect().contains(local_pos):
+                    self.mic_clicked.emit()
+                else:
+                    self.clicked.emit()
             event.accept()
 
 
@@ -483,8 +544,9 @@ class HelpDialog(QDialog):
     A beautiful dark-themed help dialog showing phonetic mapping instructions
     and configuration settings for custom Unicode/Legacy fonts.
     """
-    # Custom signal emitted when font settings change: (font_path, font_family, is_legacy)
+    # Custom signals
     font_settings_changed = pyqtSignal(str, str, bool)
+    shortcut_settings_changed = pyqtSignal(str, str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -501,7 +563,7 @@ class HelpDialog(QDialog):
         # We use a QTabWidget for Guide vs Settings
         self.tabs = QTabWidget(self)
         self.tabs.setStyleSheet("""
-            QTabWidget::panel {
+            QTabWidget::pane {
                 border: 1px solid rgba(137, 180, 250, 80);
                 background-color: rgba(30, 30, 46, 120);
                 border-radius: 8px;
@@ -567,7 +629,7 @@ class HelpDialog(QDialog):
             
             v_lbl = QLabel(val)
             v_lbl.setObjectName("cell_data")
-            v_lbl.setFont(QFont("Segoe UI", 11))
+            v_lbl.setFont(QFont("Ubuntu", 11))
             
             grid.addWidget(k_lbl, row, 0)
             grid.addWidget(v_lbl, row, 1)
@@ -783,6 +845,61 @@ class HelpDialog(QDialog):
         settings_layout.addStretch()
         
         self.tabs.addTab(settings_widget, "Font Settings")
+        
+        # ---------------- TAB 3: KEYBOARD SHORTCUTS ----------------
+        shortcuts_widget = QWidget()
+        shortcuts_layout = QVBoxLayout(shortcuts_widget)
+        shortcuts_layout.setContentsMargins(15, 15, 15, 15)
+        shortcuts_layout.setSpacing(15)
+        
+        shortcut_info = QLabel("Click inside the fields and press your desired shortcut keys, then click Done.", self)
+        shortcut_info.setWordWrap(True)
+        shortcut_info.setStyleSheet("color: #a6adc8; font-size: 11px; line-height: 14px;")
+        shortcuts_layout.addWidget(shortcut_info)
+        
+        grid_layout = QGridLayout()
+        grid_layout.setSpacing(12)
+        
+        lbl_toggle = QLabel("Toggle Input Mode (සි/EN):", self)
+        lbl_toggle.setStyleSheet("color: #cdd6f4; font-weight: bold; font-size: 11px;")
+        grid_layout.addWidget(lbl_toggle, 0, 0)
+        
+        self.toggle_edit = QKeySequenceEdit(self)
+        self.toggle_edit.setStyleSheet("""
+            QKeySequenceEdit {
+                background-color: rgba(45, 45, 68, 200);
+                color: #bac2de;
+                border: 1px solid rgba(137, 180, 250, 100);
+                border-radius: 6px;
+                padding: 6px;
+                font-weight: bold;
+            }
+        """)
+        self.toggle_edit.keySequenceChanged.connect(self.on_shortcuts_changed)
+        grid_layout.addWidget(self.toggle_edit, 0, 1)
+        
+        lbl_voice = QLabel("Toggle Voice Dictation:", self)
+        lbl_voice.setStyleSheet("color: #cdd6f4; font-weight: bold; font-size: 11px;")
+        grid_layout.addWidget(lbl_voice, 1, 0)
+        
+        self.voice_edit = QKeySequenceEdit(self)
+        self.voice_edit.setStyleSheet("""
+            QKeySequenceEdit {
+                background-color: rgba(45, 45, 68, 200);
+                color: #bac2de;
+                border: 1px solid rgba(137, 180, 250, 100);
+                border-radius: 6px;
+                padding: 6px;
+                font-weight: bold;
+            }
+        """)
+        self.voice_edit.keySequenceChanged.connect(self.on_shortcuts_changed)
+        grid_layout.addWidget(self.voice_edit, 1, 1)
+        
+        shortcuts_layout.addLayout(grid_layout)
+        shortcuts_layout.addStretch()
+        
+        self.tabs.addTab(shortcuts_widget, "Shortcuts Settings")
         layout.addWidget(self.tabs)
         
         # Main Close Button
@@ -802,7 +919,7 @@ class HelpDialog(QDialog):
         self.current_font_family = ""
         self.current_is_legacy = False
 
-    def load_initial_settings(self, path, family, is_legacy):
+    def load_initial_settings(self, path, family, is_legacy, shortcut_toggle="Ctrl+Space", shortcut_voice="Ctrl+Alt+S"):
         """
         Populate UI elements on dialog show.
         """
@@ -821,6 +938,16 @@ class HelpDialog(QDialog):
         else:
             self.font_path_lbl.setText("None")
             self.font_name_lbl.setText("Default (System Font)")
+
+        # Load shortcuts
+        from PyQt6.QtGui import QKeySequence
+        self.toggle_edit.blockSignals(True)
+        self.toggle_edit.setKeySequence(QKeySequence(shortcut_toggle))
+        self.toggle_edit.blockSignals(False)
+
+        self.voice_edit.blockSignals(True)
+        self.voice_edit.setKeySequence(QKeySequence(shortcut_voice))
+        self.voice_edit.blockSignals(False)
 
     def import_font_clicked(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -868,3 +995,8 @@ class HelpDialog(QDialog):
             self.current_font_family,
             self.current_is_legacy
         )
+
+    def on_shortcuts_changed(self):
+        toggle_str = self.toggle_edit.keySequence().toString()
+        voice_str = self.voice_edit.keySequence().toString()
+        self.shortcut_settings_changed.emit(toggle_str, voice_str)
