@@ -1,0 +1,33 @@
+#!/bin/bash
+# postinst script for helakatha
+
+set -e
+
+# Create virtual environment and install dependencies
+echo "Creating Python virtual environment..."
+python3 -m venv /usr/share/helakatha/.venv
+
+echo "Installing Python dependencies..."
+/usr/share/helakatha/.venv/bin/pip install --upgrade pip
+/usr/share/helakatha/.venv/bin/pip install PyQt6 pynput SpeechRecognition
+echo "Attempting to install PyAudio..."
+/usr/share/helakatha/.venv/bin/pip install pyaudio || echo "WARNING: PyAudio installation failed. Voice dictation might require manual installation."
+
+# Set executable permissions
+chmod +x /usr/bin/helakatha
+chmod +x /usr/share/helakatha/run.sh
+
+# Update desktop database
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database /usr/share/applications
+fi
+
+# Update icon cache
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true
+fi
+
+echo "HelaKatha installed successfully!"
+echo "You can launch it from your application menu or run 'helakatha' in terminal."
+
+exit 0

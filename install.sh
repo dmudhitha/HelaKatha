@@ -10,24 +10,27 @@ echo "Detecting package manager and installing system dependencies..."
 if [ -x "$(command -v apt-get)" ]; then
     echo "Detected Debian/Ubuntu-based system."
     sudo apt-get update
-    sudo apt-get install -y python3-pip python3-venv xclip xsel
+    sudo apt-get install -y python3-pip python3-venv xclip xsel portaudio19-dev python3-pyaudio
 elif [ -x "$(command -v dnf)" ]; then
     echo "Detected Fedora/RHEL-based system."
-    sudo dnf install -y python3-pip python3-virtualenv xclip xsel
+    sudo dnf install -y python3-pip python3-virtualenv xclip xsel portaudio-devel python3-pyaudio
 elif [ -x "$(command -v pacman)" ]; then
     echo "Detected Arch-based system."
-    sudo pacman -S --noconfirm python-pip xclip xsel
+    sudo pacman -S --noconfirm python-pip xclip xsel portaudio python-pyaudio
 else
-    echo "WARNING: Could not automatically install system dependencies (xclip, xsel, python3-venv)."
-    echo "Please ensure you have python3-venv, pip, xclip, and xsel installed manually."
+    echo "WARNING: Could not automatically install system dependencies (xclip, xsel, python3-venv, portaudio)."
+    echo "Please ensure you have python3-venv, pip, xclip, xsel, and portaudio installed manually."
 fi
 
 echo "Creating python virtual environment in .venv..."
 python3 -m venv "$DIR/.venv"
 
-echo "Installing python dependencies (PyQt6, pynput)..."
+echo "Installing python dependencies (PyQt6, pynput, SpeechRecognition)..."
 "$DIR/.venv/bin/pip" install --upgrade pip
-"$DIR/.venv/bin/pip" install PyQt6 pynput
+"$DIR/.venv/bin/pip" install PyQt6 pynput SpeechRecognition
+
+echo "Attempting to install PyAudio for voice typing..."
+"$DIR/.venv/bin/pip" install pyaudio || echo "WARNING: PyAudio installation failed. Voice typing will require manual installation of pyaudio."
 
 echo "Making scripts executable..."
 chmod +x "$DIR/run.sh"

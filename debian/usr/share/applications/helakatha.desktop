@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=HelaKatha
+Comment=HelaKatha - Singlish to Sinhala Input Tool
+Exec=helakatha
+Icon=helakatha
+Terminal=false
+Categories=Utility;InputMethod;
+StartupNotify=false
+Keywords=singlish;sinhala;input;transliteration;keyboard;

@@ -1,0 +1,12 @@
+#!/bin/bash
+# HelaKatha - Singlish to Sinhala Input Tool
+# Main executable script installed in /usr/bin/helakatha
+
+# Source the virtual environment and run the application
+HELAKATHA_DIR="/usr/share/helakatha"
+
+# Force X11 backend for PyQt (necessary on Wayland systems via Xwayland)
+export QT_QPA_PLATFORM=xcb
+
+# Execute main.py using the virtual environment python
+exec "$HELAKATHA_DIR/.venv/bin/python3" "$HELAKATHA_DIR/main.py"

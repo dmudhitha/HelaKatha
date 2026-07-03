@@ -1,0 +1,39 @@
+The DEB package has been successfully created at
+  /home/mudhitha/singlish-input-tool/helakatha_1.0.0-1_all.deb (21KB).
+
+  Package Summary
+
+  Package: helakatha_1.0.0-1_all.deb
+
+  Installation:
+  sudo dpkg -i helakatha_1.0.0-1_all.deb
+  sudo apt-get install -f  # Install dependencies if needed
+
+  Package Contents:
+  - /usr/bin/helakatha - Main launcher script
+  - /usr/share/helakatha/ - Application files (main.py, engine.py, ui.py,
+  run.sh, README.md)
+  - /usr/share/applications/helakatha.desktop - Desktop entry for application
+  menu
+  - /usr/share/pixmaps/helakatha.svg - Application icon
+  - /etc/xdg/autostart/helakatha.desktop - Autostart entry
+  - DEBIAN/control - Package metadata with dependencies
+
+  Dependencies (auto-installed):
+  - python3 (>= 3.10)
+  - python3-venv
+  - python3-pyqt6
+  - python3-pynput
+  - xclip
+  - xsel
+
+  Post-installation:
+  The postinst script automatically:
+  1. Creates a Python virtual environment at /usr/share/helakatha/.venv
+  2. Installs PyQt6 and pynput via pip
+  3. Updates desktop database and icon cache
+
+  Usage after install:
+  - Search "HelaKatha" in your application launcher
+  - Or run helakatha in terminal
+  - Press Ctrl + Space to toggle the input tool

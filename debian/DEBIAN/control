@@ -1,0 +1,23 @@
+Package: helakatha
+Version: 1.0.0
+Section: utils
+Priority: optional
+Architecture: all
+Depends: python3 (>= 3.10), python3-venv, python3-pip, xclip, xsel, python3-pyaudio
+Maintainer: Mudhitha Dharmarathna <dmudhitha@gmail.com>
+Description: HelaKatha - Singlish to Sinhala Input Tool
+ A complete, production-ready desktop input method tool for Linux distributions.
+ Functions like Google Singlish Input Tool - captures phonetic Singlish keyboard
+ input globally, matches syllables against phonetic transliteration rules and
+ autocomplete dictionaries, displays an elegant candidate list near the cursor,
+ and injects the selected Sinhala script back into the active application.
+ .
+ Features:
+  * Global keyboard hooking with pynput
+  * PyQt6-based floating candidate window
+  * Clipboard-based Unicode injection (layout-independent)
+  * Draggable language switcher bar
+  * Unicode and Legacy (FM Abhaya) font modes
+  * System tray integration with toggle and settings
+  * Autostart support
+Homepage: https://github.com/dmudhitha/singlish-input-tool

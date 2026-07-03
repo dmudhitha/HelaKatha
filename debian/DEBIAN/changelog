@@ -1,0 +1,11 @@
+helakatha (1.0.0-1) unstable; urgency=medium
+
+  * Initial release of HelaKatha - Singlish to Sinhala Input Tool
+  * Phonetic Singlish to Sinhala Unicode transliteration
+  * Global keyboard hook with candidate window
+  * Clipboard-based Unicode injection
+  * System tray integration and autostart support
+  * Unicode and Legacy (FM Abhaya) font modes
+  * Draggable language switcher bar
+
+ -- Mudhitha Dharmarathna <dmudhitha@gmail.com>  Mon, 01 Jul 2026 22:00:00 +0530

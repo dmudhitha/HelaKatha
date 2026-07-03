@@ -1,0 +1,16 @@
+#!/bin/bash
+# prerm script for helakatha
+
+set -e
+
+# Remove autostart file
+rm -f /etc/xdg/autostart/helakatha.desktop
+
+# Remove desktop database entry
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database /usr/share/applications
+fi
+
+echo "HelaKatha removed successfully!"
+
+exit 0
