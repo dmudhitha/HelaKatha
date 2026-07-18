@@ -2,6 +2,9 @@ import sys
 import time
 import os
 import json
+import re
+import struct
+import math
 from contextlib import contextmanager
 from PyQt6.QtCore import Qt, QObject, pyqtSignal, QEventLoop, QTimer, QThread
 from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
@@ -13,6 +16,54 @@ from pynput.mouse import Listener as MouseListener
 # Import local modules
 from engine import TransliterationEngine, unicode_to_fm_abhaya
 from ui import CandidateWindow, NotificationOSD, HelpDialog, create_status_icon, LanguageBar
+
+SINHALA_PUNCTUATION_MAP = {
+    "කොමාව": ",",
+    "කොමා": ",",
+    "තිත": ".",
+    "ප්‍රශ්නාර්ථය": "?",
+    "විස්මයාර්ථය": "!",
+    "නවතින්න": ".",
+}
+
+def calculate_rms(chunk):
+    count = len(chunk) / 2
+    if count == 0:
+        return 0
+    fmt = "%dh" % count
+    try:
+        shorts = struct.unpack(fmt, chunk)
+    except Exception:
+        return 0
+    sum_squares = 0.0
+    for sample in shorts:
+        n = sample / 32768.0
+        sum_squares += n * n
+    return math.sqrt(sum_squares / count)
+
+def smart_format_text(text, lang_code):
+    if not text:
+        return ""
+    text = text.strip()
+    
+    if lang_code == "si-LK":
+        # Handle Sinhala spoken punctuation
+        for word, punc in SINHALA_PUNCTUATION_MAP.items():
+            text = text.replace(" " + word, punc)
+            text = text.replace(word, punc)
+        text = re.sub(r'\s*([,\.\?!])\s*', r'\1 ', text)
+        text = re.sub(r'\s+', ' ', text).strip()
+    else:
+        # Handle English formatting
+        sentences = re.split(r'([\.!\?]\s*)', text)
+        for i in range(0, len(sentences), 2):
+            if sentences[i]:
+                sentences[i] = sentences[i][0].upper() + sentences[i][1:]
+        text = "".join(sentences)
+        text = re.sub(r'\bi\b', 'I', text)
+        text = re.sub(r'\s*([,\.\?!])\s*', r'\1 ', text)
+        text = re.sub(r'\s+', ' ', text).strip()
+    return text
 
 @contextmanager
 def suppress_stderr():
@@ -38,70 +89,152 @@ class VoiceDictationWorker(QThread):
     finished = pyqtSignal(str)
     error = pyqtSignal(str)
     status = pyqtSignal(str)
+    audio_level = pyqtSignal(int)
 
-    def __init__(self):
+    def __init__(self, lang_code="si-LK", voice_mode="cloud"):
         super().__init__()
         self.running = True
+        self.lang_code = lang_code
+        self.voice_mode = voice_mode
 
     def run(self):
         try:
-            import speech_recognition as sr
+            import pyaudio
         except ImportError:
-            self.error.emit("Missing library: Install SpeechRecognition")
+            self.error.emit("Missing library: Install pyaudio")
             return
-
-        r = sr.Recognizer()
-        r.pause_threshold = 0.8
-        r.non_speaking_duration = 0.5
+            
+        RATE = 16000
+        CHUNK_SIZE = 1024
+        SILENCE_LIMIT = 1.5
+        MAX_RECORD_TIME = 10.0
 
         # Instantiate microphone and open stream while suppressing ALSA C-level warnings
         try:
             with suppress_stderr():
-                microphone = sr.Microphone()
-                audio_context = microphone.__enter__()
+                p = pyaudio.PyAudio()
+                stream = p.open(
+                    format=pyaudio.paInt16,
+                    channels=1,
+                    rate=RATE,
+                    input=True,
+                    frames_per_buffer=CHUNK_SIZE
+                )
         except Exception as e:
             self.error.emit("Mic Error: Verify microphone connection")
             return
 
-        try:
-            self.status.emit("Adjusting noise...")
-            r.adjust_for_ambient_noise(audio_context, duration=0.5)
-            
+        self.status.emit("Adjusting noise...")
+        ambient_sum = 0
+        calibration_chunks = int(RATE / CHUNK_SIZE * 0.5)
+        for _ in range(calibration_chunks):
             if not self.running:
-                return
-                
-            self.status.emit("Listening (Speak Sinhala)...")
-            audio = r.listen(audio_context, timeout=4, phrase_time_limit=10)
-        except sr.WaitTimeoutError:
-            self.error.emit("Timeout: No speech detected")
-            return
-        except Exception as e:
-            self.error.emit("Mic Error: Install PyAudio or verify microphone")
-            return
-        finally:
-            with suppress_stderr():
-                try:
-                    microphone.__exit__(None, None, None)
-                except Exception:
-                    pass
+                break
+            try:
+                data = stream.read(CHUNK_SIZE, exception_on_overflow=False)
+                ambient_sum += calculate_rms(data)
+            except Exception:
+                pass
+        
+        calibrated_threshold = max(0.015, (ambient_sum / max(1, calibration_chunks)) * 1.5)
+
+        speak_lang = "Sinhala" if self.lang_code == "si-LK" else "English"
+        self.status.emit(f"Listening (Speak {speak_lang})...")
+        
+        raw_frames = []
+        silence_start = None
+        speech_started = False
+        start_time = time.time()
+
+        while self.running:
+            elapsed = time.time() - start_time
+            if elapsed > MAX_RECORD_TIME:
+                break
+
+            try:
+                data = stream.read(CHUNK_SIZE, exception_on_overflow=False)
+            except Exception:
+                continue
+
+            raw_frames.append(data)
+            
+            # Calculate levels and emit signal
+            rms = calculate_rms(data)
+            level = min(100, int(rms * 400))
+            self.audio_level.emit(level)
+
+            if rms > calibrated_threshold:
+                speech_started = True
+                silence_start = None
+            else:
+                if speech_started:
+                    if silence_start is None:
+                        silence_start = time.time()
+                    elif time.time() - silence_start > SILENCE_LIMIT:
+                        break
+                else:
+                    # Timeout if no speech is detected within 4s
+                    if elapsed > 4.0:
+                        self.error.emit("Timeout: No speech detected")
+                        try:
+                            stream.stop_stream()
+                            stream.close()
+                            p.terminate()
+                        except Exception:
+                            pass
+                        return
+
+        try:
+            stream.stop_stream()
+            stream.close()
+            p.terminate()
+        except Exception:
+            pass
 
         if not self.running:
             return
 
-        self.status.emit("Transcribing...")
-        try:
-            # Call Google Web Speech API with si-LK (Sinhala)
-            text = r.recognize_google(audio, language="si-LK")
-            if text:
-                self.finished.emit(text)
-            else:
-                self.error.emit("No text recognized")
-        except sr.UnknownValueError:
-            self.error.emit("Could not understand audio")
-        except sr.RequestError:
-            self.error.emit("Network request failed")
-        except Exception as e:
-            self.error.emit(f"Error: {str(e)}")
+        audio_bytes = b"".join(raw_frames)
+
+        if self.voice_mode == "offline":
+            self.status.emit("Transcribing Offline...")
+            try:
+                import vosk
+                home = os.path.expanduser("~")
+                model_path = os.path.join(home, ".gemini", "antigravity-cli", "vosk-model")
+                if not os.path.exists(model_path):
+                    self.error.emit("Offline model not found. Install Sinhala model in ~/.gemini/antigravity-cli/vosk-model")
+                    return
+
+                model = vosk.Model(model_path)
+                rec = vosk.KaldiRecognizer(model, RATE)
+                rec.AcceptWaveform(audio_bytes)
+                res = json.loads(rec.Result())
+                text = res.get("text", "")
+                
+                if text:
+                    formatted_text = smart_format_text(text, self.lang_code)
+                    self.finished.emit(formatted_text)
+                else:
+                    self.error.emit("No speech understood offline")
+            except ImportError:
+                self.error.emit("Missing package: pip install vosk")
+            except Exception as e:
+                self.error.emit(f"Offline error: {str(e)}")
+        else:
+            self.status.emit("Transcribing...")
+            try:
+                import speech_recognition as sr
+                audio_data = sr.AudioData(audio_bytes, RATE, 2)
+                r = sr.Recognizer()
+                text = r.recognize_google(audio_data, language=self.lang_code)
+                if text:
+                    formatted_text = smart_format_text(text, self.lang_code)
+                    self.finished.emit(formatted_text)
+                else:
+                    self.error.emit("No text recognized")
+            except Exception as e:
+                self.error.emit(f"Error: {str(e)}")
 
     def stop(self):
         self.running = False
@@ -138,6 +271,15 @@ class SinglishInputController(QObject):
         self.alt_pressed = False
         self.shift_pressed = False
         self.win_pressed = False
+        self.prediction_active = False
+        self.last_typed_word = ""
+        self.clipboard_cache = ""
+        
+        # Connect clipboard caching
+        clipboard = QApplication.clipboard()
+        if clipboard:
+            clipboard.dataChanged.connect(self.update_clipboard_cache)
+            self.update_clipboard_cache()
         
         # Voice Dictation State
         self.is_dictating = False
@@ -151,8 +293,9 @@ class SinglishInputController(QObject):
         self.sig_toggle_voice.connect(self.toggle_voice_dictation)
         self.lang_bar.clicked.connect(self.toggle_mode_clicked)
         self.lang_bar.mic_clicked.connect(self.toggle_voice_dictation)
-        self.help_dialog.font_settings_changed.connect(self.handle_font_settings_changed)
+        self.help_dialog.settings_changed.connect(self.handle_settings_changed)
         self.help_dialog.shortcut_settings_changed.connect(self.handle_shortcut_settings_changed)
+        self.help_dialog.macro_settings_changed.connect(self.handle_macro_settings_changed)
         
         # 5. Initialize System Tray Icon
         self.setup_tray_icon()
@@ -219,7 +362,9 @@ class SinglishInputController(QObject):
         # Load currently active settings into UI fields
         self.help_dialog.load_initial_settings(
             self.font_path, self.font_family, self.is_legacy_font,
-            self.shortcut_toggle, self.shortcut_voice
+            self.shortcut_toggle, self.shortcut_voice,
+            self.is_offline_voice, self.is_light_theme,
+            self.engine.macros
         )
         self.help_dialog.show()
         self.help_dialog.raise_()
@@ -235,15 +380,30 @@ class SinglishInputController(QObject):
         if self.is_injecting:
             return
             
+        # Safely clear any previous worker reference to avoid leaks
+        if self.dictation_worker:
+            try:
+                self.dictation_worker.stop()
+                self.dictation_worker.wait()
+            except Exception:
+                pass
+            self.dictation_worker = None
+            
         self.is_dictating = True
         self.lang_bar.set_mic_state("listening")
         
-        # Instantiate and start the worker thread
-        self.dictation_worker = VoiceDictationWorker()
+        # Instantiate and start the worker thread with language based on input mode and offline voice setting
+        lang_code = "si-LK" if self.is_enabled else "en-US"
+        voice_mode = "offline" if self.is_offline_voice else "cloud"
+        self.dictation_worker = VoiceDictationWorker(lang_code, voice_mode)
         self.dictation_worker.status.connect(self.handle_voice_status)
         self.dictation_worker.finished.connect(self.handle_voice_success)
         self.dictation_worker.error.connect(self.handle_voice_error)
+        self.dictation_worker.audio_level.connect(self.handle_audio_level)
         self.dictation_worker.start()
+
+    def handle_audio_level(self, level):
+        self.osd.set_audio_level(level)
 
     def cancel_voice_dictation(self):
         if self.dictation_worker:
@@ -269,7 +429,6 @@ class SinglishInputController(QObject):
     def handle_voice_success(self, text):
         self.is_dictating = False
         self.lang_bar.set_mic_state("idle")
-        self.dictation_worker = None
         
         # Inject the text directly (delete_count=0)
         self.sig_replace_text.emit(0, text, "")
@@ -285,7 +444,6 @@ class SinglishInputController(QObject):
     def handle_voice_error(self, error_text):
         self.is_dictating = False
         self.lang_bar.set_mic_state("idle")
-        self.dictation_worker = None
         
         self.osd.show_dictation_message(
             "Voice Typing Failed",
@@ -294,6 +452,14 @@ class SinglishInputController(QObject):
             text_color="#f38ba8",
             persistent=False
         )
+
+    def update_clipboard_cache(self):
+        try:
+            clipboard = QApplication.clipboard()
+            if clipboard:
+                self.clipboard_cache = clipboard.text()
+        except Exception:
+            pass
 
     def get_settings_path(self):
         home = os.path.expanduser("~")
@@ -305,6 +471,8 @@ class SinglishInputController(QObject):
         self.font_path = ""
         self.font_family = ""
         self.is_legacy_font = False
+        self.is_offline_voice = False
+        self.is_light_theme = False
         self.shortcut_toggle = "Ctrl+Space"
         self.shortcut_voice = "Ctrl+Alt+S"
         
@@ -316,6 +484,8 @@ class SinglishInputController(QObject):
                     self.font_path = data.get("font_path", "")
                     self.font_family = data.get("font_family", "")
                     self.is_legacy_font = data.get("is_legacy_font", False)
+                    self.is_offline_voice = data.get("is_offline_voice", False)
+                    self.is_light_theme = data.get("is_light_theme", False)
                     self.shortcut_toggle = data.get("shortcut_toggle", "Ctrl+Space")
                     self.shortcut_voice = data.get("shortcut_voice", "Ctrl+Alt+S")
             except Exception as e:
@@ -334,6 +504,8 @@ class SinglishInputController(QObject):
             self.font_path = ""
             self.font_family = ""
             self.candidate_window.set_font_family("")
+            
+        self.apply_theme()
 
     def save_settings(self):
         settings_file = self.get_settings_path()
@@ -343,27 +515,43 @@ class SinglishInputController(QObject):
                     "font_path": self.font_path,
                     "font_family": self.font_family,
                     "is_legacy_font": self.is_legacy_font,
+                    "is_offline_voice": self.is_offline_voice,
+                    "is_light_theme": self.is_light_theme,
                     "shortcut_toggle": self.shortcut_toggle,
                     "shortcut_voice": self.shortcut_voice
                 }, f, indent=4)
         except Exception as e:
             print(f"Error saving settings.json: {e}")
 
-    def handle_font_settings_changed(self, path, family, is_legacy):
+    def apply_theme(self):
+        self.candidate_window.set_light_theme(self.is_light_theme)
+        self.lang_bar.set_light_theme(self.is_light_theme)
+        self.osd.set_light_theme(self.is_light_theme)
+        self.help_dialog.set_light_theme(self.is_light_theme)
+        try:
+            self.tray_icon.setIcon(create_status_icon(self.is_enabled))
+        except AttributeError:
+            pass
+
+    def handle_settings_changed(self, path, family, is_legacy, is_offline_voice, is_light_theme):
         self.font_path = path
         self.font_family = family
         self.is_legacy_font = is_legacy
+        self.is_offline_voice = is_offline_voice
+        self.is_light_theme = is_light_theme
         
-        # Apply font to CandidateWindow
         self.candidate_window.set_font_family(family)
-        
-        # Save settings
+        self.apply_theme()
         self.save_settings()
 
     def handle_shortcut_settings_changed(self, shortcut_toggle, shortcut_voice):
         self.shortcut_toggle = shortcut_toggle
         self.shortcut_voice = shortcut_voice
         self.save_settings()
+
+    def handle_macro_settings_changed(self, new_macros):
+        self.engine.macros = new_macros
+        self.engine.save_macros()
 
     def start_listeners(self):
         """
@@ -458,7 +646,7 @@ class SinglishInputController(QObject):
             if len(self.buffer) > 0:
                 self.buffer = self.buffer[:-1]
                 if self.buffer:
-                    candidates = self.engine.get_candidates(self.buffer)
+                    candidates = self.engine.get_candidates(self.buffer, self.clipboard_cache)
                     self.sig_update_ui.emit(self.buffer, candidates)
                 else:
                     self.sig_hide_ui.emit()
@@ -484,36 +672,49 @@ class SinglishInputController(QObject):
             
             if char:
                 # Buffer standard letters, numbers, and key symbols in Singlish
-                if char.isalnum() or char in (')', '/', '\\', '-'):
+                if char.isalnum() or char in (')', '/', '\\', '-', ':'):
                     # If buffer is empty, do not buffer numeric inputs
                     if not self.buffer and char.isdigit():
                         return
                     
-                    # Direct number key selection (1-5) when buffer is active
-                    if self.buffer and char in ('1', '2', '3', '4', '5'):
+                    # Direct number key selection (1-5) when buffer or predictions are active
+                    if (self.buffer or self.prediction_active) and char in ('1', '2', '3', '4', '5'):
                         index = int(char) - 1
-                        candidates = self.engine.get_candidates(self.buffer)
+                        if self.buffer:
+                            candidates = self.engine.get_candidates(self.buffer, self.clipboard_cache)
+                            delete_count = len(self.buffer) + 1
+                        else:
+                            candidates = self.engine.get_predictions(self.last_typed_word)
+                            delete_count = 1
                         if index < len(candidates):
                             selected_word = candidates[index]
-                            # User typed the number, so delete buffer + the number typed (buffer_len + 1)
-                            delete_count = len(self.buffer) + 1
                             self.sig_replace_text.emit(delete_count, selected_word, char)
                         return
 
+                    self.prediction_active = False
                     self.buffer += char
-                    candidates = self.engine.get_candidates(self.buffer)
+                    candidates = self.engine.get_candidates(self.buffer, self.clipboard_cache)
                     self.sig_update_ui.emit(self.buffer, candidates)
             
             # Handle Space or Enter selection
             elif key in (Key.space, Key.enter):
                 if self.buffer:
-                    candidates = self.engine.get_candidates(self.buffer)
+                    candidates = self.engine.get_candidates(self.buffer, self.clipboard_cache)
                     if candidates:
                         selected_word = candidates[0]
-                        # Space/Enter is typed in editor, so delete buffer + space/enter (buffer_len + 1)
                         delete_count = len(self.buffer) + 1
                         extra_char = ' ' if key == Key.space else '\n'
                         self.sig_replace_text.emit(delete_count, selected_word, extra_char)
+                elif self.prediction_active:
+                    candidates = self.engine.get_predictions(self.last_typed_word)
+                    if candidates:
+                        selected_word = candidates[0]
+                        delete_count = 1
+                        extra_char = ' ' if key == Key.space else '\n'
+                        self.sig_replace_text.emit(delete_count, selected_word, extra_char)
+                else:
+                    self.prediction_active = False
+                    self.sig_hide_ui.emit()
 
         except Exception as e:
             print(f"Error in keyboard listener: {e}")
@@ -553,9 +754,11 @@ class SinglishInputController(QObject):
         else:
             display_candidates = candidates
             
+        self.prediction_active = (not buffer_text)
         self.candidate_window.update_candidates(buffer_text, display_candidates)
 
     def handle_hide_ui(self):
+        self.prediction_active = False
         self.candidate_window.hide()
 
     def handle_toggle_state(self, enabled):
@@ -582,12 +785,26 @@ class SinglishInputController(QObject):
         """
         self.is_injecting = True
         
+        # Learn the selected word dynamically
+        try:
+            self.engine.learn_word(self.buffer, selected_word)
+        except Exception as e:
+            print(f"Error learning word: {e}")
+
+        # Learn sentence patterns (Bigrams)
+        try:
+            if hasattr(self, 'last_typed_word') and self.last_typed_word:
+                self.engine.learn_bigram(self.last_typed_word, selected_word)
+        except Exception as e:
+            print(f"Error learning bigram: {e}")
+        self.last_typed_word = selected_word
+        
         # 1. Delete typed English text and trigger key
         for _ in range(delete_count):
             self.keyboard_controller.press(Key.backspace)
             self.keyboard_controller.release(Key.backspace)
             time.sleep(0.003) # Brief pause to let the text clear
-
+ 
         # 2. Paste Sinhala Unicode text via Clipboard
         try:
             clipboard = QApplication.clipboard()
@@ -602,14 +819,11 @@ class SinglishInputController(QObject):
                 self.keyboard_controller.release('v')
                 
             # Wait 100ms for the target application to process the paste event.
-            # We must use a local QEventLoop instead of time.sleep() so that the main
-            # GUI thread continues running and processing X11 clipboard requests from
-            # the target application. This prevents "no data available" transfer errors.
             loop = QEventLoop()
             QTimer.singleShot(100, loop.quit)
             loop.exec()
             
-            # Restore original clipboard (or clear it if it was empty)
+            # Restore original clipboard
             if old_text:
                 clipboard.setText(old_text)
             else:
@@ -620,8 +834,16 @@ class SinglishInputController(QObject):
         
         # 3. Clean local states
         self.buffer = ""
-        self.candidate_window.hide()
         
+        # Show predictions for the next word
+        predictions = self.engine.get_predictions(selected_word)
+        if predictions:
+            self.prediction_active = True
+            self.sig_update_ui.emit("", predictions)
+        else:
+            self.prediction_active = False
+            self.sig_hide_ui.emit()
+            
         self.is_injecting = False
 
 

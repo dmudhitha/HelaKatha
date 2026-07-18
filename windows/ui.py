@@ -1,9 +1,9 @@
 import sys
-from PyQt6.QtCore import Qt, QPoint, QTimer, QPropertyAnimation, QEasingCurve, pyqtSignal
+from PyQt6.QtCore import Qt, QPoint, QTimer, QPropertyAnimation, QEasingCurve, pyqtSignal, QRect
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout, QFrame, QGraphicsOpacityEffect,
     QDialog, QPushButton, QGridLayout, QScrollArea, QFileDialog, QCheckBox, QTabWidget,
-    QKeySequenceEdit
+    QKeySequenceEdit, QGraphicsDropShadowEffect, QTextEdit
 )
 from PyQt6.QtGui import QFont, QColor, QCursor, QScreen, QIcon, QPixmap, QPainter, QPen, QFontDatabase
 
@@ -16,6 +16,14 @@ QFrame#container {
 }
 """
 
+WINDOW_STYLE_LIGHT = """
+QFrame#container {
+    background-color: rgba(239, 241, 245, 240); /* #eff1f5 transparent */
+    border: 1px solid rgba(30, 102, 245, 100); /* soft blue border */
+    border-radius: 10px;
+}
+"""
+
 PREVIEW_STYLE = """
 QLabel {
     color: #bac2de; /* lighter grey */
@@ -23,6 +31,17 @@ QLabel {
     font-weight: bold;
     padding: 2px 5px;
     background-color: rgba(49, 50, 68, 150); /* #313244 */
+    border-radius: 4px;
+}
+"""
+
+PREVIEW_STYLE_LIGHT = """
+QLabel {
+    color: #4c4f69;
+    font-size: 11px;
+    font-weight: bold;
+    padding: 2px 5px;
+    background-color: rgba(228, 230, 235, 150);
     border-radius: 4px;
 }
 """
@@ -41,6 +60,24 @@ QLabel#num_badge {
 }
 QLabel#word_text {
     color: #1e1e2e;
+    font-weight: bold;
+}
+"""
+
+CANDIDATE_ACTIVE_STYLE_LIGHT = """
+QFrame#candidate_row {
+    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1e66f5, stop:1 #7287fd);
+    border-radius: 6px;
+}
+QLabel#num_badge {
+    color: #1e66f5;
+    background-color: #ffffff;
+    font-weight: bold;
+    border-radius: 3px;
+    padding: 1px 5px;
+}
+QLabel#word_text {
+    color: #ffffff;
     font-weight: bold;
 }
 """
@@ -65,6 +102,26 @@ QLabel#word_text {
 }
 """
 
+CANDIDATE_INACTIVE_STYLE_LIGHT = """
+QFrame#candidate_row {
+    background-color: transparent;
+    border-radius: 6px;
+}
+QFrame#candidate_row:hover {
+    background-color: rgba(228, 230, 235, 180);
+}
+QLabel#num_badge {
+    color: #4c4f69;
+    background-color: #ccd0da;
+    font-weight: bold;
+    border-radius: 3px;
+    padding: 1px 5px;
+}
+QLabel#word_text {
+    color: #4c4f69;
+}
+"""
+
 OSD_STYLE = """
 QFrame#osd_container {
     background-color: rgba(17, 17, 27, 220); /* #11111b dark transparent */
@@ -78,6 +135,23 @@ QLabel#title {
 }
 QLabel#subtitle {
     color: #a6adc8;
+    font-size: 12px;
+}
+"""
+
+OSD_STYLE_LIGHT = """
+QFrame#osd_container {
+    background-color: rgba(230, 233, 239, 220);
+    border: 2px solid %BORDER_COLOR%;
+    border-radius: 15px;
+}
+QLabel#title {
+    color: %TEXT_COLOR%;
+    font-size: 18px;
+    font-weight: bold;
+}
+QLabel#subtitle {
+    color: #5c5f77;
     font-size: 12px;
 }
 """
@@ -114,6 +188,57 @@ QLabel#cell_data {
     border-radius: 3px;
     padding: 4px;
 }
+QCheckBox {
+    color: #cdd6f4;
+    font-size: 11px;
+}
+QCheckBox::indicator {
+    width: 14px;
+    height: 14px;
+}
+QKeySequenceEdit {
+    background-color: rgba(45, 45, 68, 200);
+    color: #bac2de;
+    border: 1px solid rgba(137, 180, 250, 100);
+    border-radius: 6px;
+    padding: 6px;
+    font-weight: bold;
+}
+QTextEdit#macros_edit {
+    background-color: rgba(45, 45, 68, 200);
+    color: #cdd6f4;
+    border: 1px solid rgba(137, 180, 250, 100);
+    border-radius: 6px;
+    padding: 6px;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+}
+QTabWidget::pane {
+    border: 1px solid rgba(137, 180, 250, 80);
+    background-color: rgba(30, 30, 46, 120);
+    border-radius: 8px;
+}
+QTabBar::tab {
+    background: rgba(45, 45, 68, 200);
+    color: #bac2de;
+    border: 1px solid rgba(137, 180, 250, 50);
+    border-bottom: none;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    padding: 8px 20px;
+    margin-right: 4px;
+    font-weight: bold;
+}
+QTabBar::tab:selected {
+    background: rgba(137, 180, 250, 50);
+    color: #89b4fa;
+    border: 1px solid rgba(137, 180, 250, 120);
+    border-bottom: none;
+}
+QTabBar::tab:hover {
+    background: rgba(137, 180, 250, 30);
+    color: #f5c2e7;
+}
 QPushButton#close_btn {
     background-color: #89b4fa;
     color: #11111b;
@@ -124,6 +249,142 @@ QPushButton#close_btn {
 }
 QPushButton#close_btn:hover {
     background-color: #b4befe;
+}
+QPushButton#import_btn {
+    background-color: #89b4fa;
+    color: #1e1e2e;
+    font-weight: bold;
+    border-radius: 6px;
+    padding: 6px 12px;
+}
+QPushButton#import_btn:hover {
+    background-color: #b4befe;
+}
+QPushButton#reset_btn {
+    background-color: #f38ba8;
+    color: #1e1e2e;
+    font-weight: bold;
+    border-radius: 6px;
+    padding: 6px 12px;
+}
+QPushButton#reset_btn:hover {
+    background-color: #f9e2af;
+}
+"""
+
+HELP_DIALOG_STYLE_LIGHT = """
+QDialog {
+    background-color: #eff1f5;
+    border: 1px solid #ccd0da;
+    border-radius: 8px;
+}
+QLabel {
+    color: #4c4f69;
+}
+QLabel#title {
+    color: #1e66f5;
+    font-size: 16px;
+    font-weight: bold;
+}
+QLabel#section_title {
+    color: #d20f39;
+    font-size: 12px;
+    font-weight: bold;
+    margin-top: 10px;
+}
+QLabel#cell_header {
+    color: #5c5f77;
+    font-weight: bold;
+    border-bottom: 1px solid #ccd0da;
+    padding: 4px;
+}
+QLabel#cell_data {
+    color: #4c4f69;
+    background-color: #e6e9ef;
+    border-radius: 3px;
+    padding: 4px;
+}
+QCheckBox {
+    color: #4c4f69;
+    font-size: 11px;
+}
+QCheckBox::indicator {
+    width: 14px;
+    height: 14px;
+}
+QKeySequenceEdit {
+    background-color: rgba(230, 233, 239, 200);
+    color: #4c4f69;
+    border: 1px solid rgba(30, 102, 245, 100);
+    border-radius: 6px;
+    padding: 6px;
+    font-weight: bold;
+}
+QTextEdit#macros_edit {
+    background-color: rgba(228, 230, 241, 200);
+    color: #4c4f69;
+    border: 1px solid rgba(30, 102, 245, 100);
+    border-radius: 6px;
+    padding: 6px;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+}
+QTabWidget::pane {
+    border: 1px solid rgba(30, 102, 245, 80);
+    background-color: rgba(230, 233, 239, 120);
+    border-radius: 8px;
+}
+QTabBar::tab {
+    background: rgba(230, 233, 239, 200);
+    color: #6c6f85;
+    border: 1px solid rgba(30, 102, 245, 50);
+    border-bottom: none;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    padding: 8px 20px;
+    margin-right: 4px;
+    font-weight: bold;
+}
+QTabBar::tab:selected {
+    background: rgba(30, 102, 245, 50);
+    color: #1e66f5;
+    border: 1px solid rgba(30, 102, 245, 120);
+    border-bottom: none;
+}
+QTabBar::tab:hover {
+    background: rgba(30, 102, 245, 30);
+    color: #ea76cb;
+}
+QPushButton#close_btn {
+    background-color: #1e66f5;
+    color: #eff1f5;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 16px;
+    font-weight: bold;
+}
+QPushButton#close_btn:hover {
+    background-color: #7287fd;
+}
+QPushButton#import_btn {
+    background-color: #1e66f5;
+    color: #eff1f5;
+    font-weight: bold;
+    border-radius: 6px;
+    padding: 6px 12px;
+}
+QPushButton#import_btn:hover {
+    background-color: #7287fd;
+}
+QPushButton#reset_btn {
+    background-color: #d20f39;
+    color: #eff1f5;
+    font-weight: bold;
+    border-radius: 6px;
+    padding: 6px 12px;
+}
+QPushButton#reset_btn:hover {
+    background-color: #ea76cb;
 }
 """
 
@@ -168,6 +429,9 @@ class CandidateRow(QFrame):
     def __init__(self, index, parent=None):
         super().__init__(parent)
         self.setObjectName("candidate_row")
+        self.is_active = False
+        self.active_style = CANDIDATE_ACTIVE_STYLE
+        self.inactive_style = CANDIDATE_INACTIVE_STYLE
         
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 4, 8, 4)
@@ -189,21 +453,22 @@ class CandidateRow(QFrame):
         layout.addStretch()
         
         self.set_active(False)
-
+ 
     def set_text(self, text):
         self.word_text.setText(text)
-
+ 
     def set_font_family(self, family):
         if family:
             self.word_text.setFont(QFont(family, 13))
         else:
             self.word_text.setFont(QFont("Ubuntu", 13))
-
+ 
     def set_active(self, active):
+        self.is_active = active
         if active:
-            self.setStyleSheet(CANDIDATE_ACTIVE_STYLE)
+            self.setStyleSheet(self.active_style)
         else:
-            self.setStyleSheet(CANDIDATE_INACTIVE_STYLE)
+            self.setStyleSheet(self.inactive_style)
 
 
 class CandidateWindow(QWidget):
@@ -229,6 +494,13 @@ class CandidateWindow(QWidget):
         self.container.setObjectName("container")
         self.container.setStyleSheet(WINDOW_STYLE)
         
+        # Add drop shadow for a premium floating visual effect
+        self.shadow = QGraphicsDropShadowEffect(self)
+        self.shadow.setBlurRadius(15)
+        self.shadow.setColor(QColor(0, 0, 0, 120))
+        self.shadow.setOffset(0, 4)
+        self.container.setGraphicsEffect(self.shadow)
+        
         self.main_layout = QVBoxLayout(self.container)
         self.main_layout.setContentsMargins(6, 6, 6, 6)
         self.main_layout.setSpacing(4)
@@ -246,21 +518,43 @@ class CandidateWindow(QWidget):
             self.main_layout.addWidget(row)
             
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(10, 10, 10, 10) # padding to ensure shadow doesn't get clipped
         layout.addWidget(self.container)
         
+        # Setup slide geometry animation
+        self.anim = QPropertyAnimation(self, b"geometry")
+        self.anim.setDuration(120)
+        self.anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        
         self.hide()
+
+    def set_light_theme(self, is_light):
+        window_style = WINDOW_STYLE_LIGHT if is_light else WINDOW_STYLE
+        preview_style = PREVIEW_STYLE_LIGHT if is_light else PREVIEW_STYLE
+        self.container.setStyleSheet(window_style)
+        self.preview_label.setStyleSheet(preview_style)
+        
+        active_style = CANDIDATE_ACTIVE_STYLE_LIGHT if is_light else CANDIDATE_ACTIVE_STYLE
+        inactive_style = CANDIDATE_INACTIVE_STYLE_LIGHT if is_light else CANDIDATE_INACTIVE_STYLE
+        
+        for row in self.rows:
+            row.active_style = active_style
+            row.inactive_style = inactive_style
+            row.set_active(row.is_active)
 
     def set_font_family(self, family):
         for row in self.rows:
             row.set_font_family(family)
 
     def update_candidates(self, buffer_text, candidates):
-        if not buffer_text:
+        if not buffer_text and not candidates:
             self.hide()
             return
             
-        self.preview_label.setText(f"Typing: {buffer_text}")
+        if buffer_text:
+            self.preview_label.setText(f"Typing: {buffer_text}")
+        else:
+            self.preview_label.setText("Predictions:")
         
         for i in range(5):
             if i < len(candidates):
@@ -288,7 +582,67 @@ class CandidateWindow(QWidget):
         if y + window_height > screen.bottom():
             y = cursor_pos.y() - window_height - 10
             
-        self.move(x, y)
+        target_geom = QRect(x, y, window_width, window_height)
+        if not self.isVisible():
+            # Soft slide-up on pop
+            self.setGeometry(QRect(x, y + 10, window_width, window_height))
+            self.anim.stop()
+            self.anim.setStartValue(QRect(x, y + 10, window_width, window_height))
+            self.anim.setEndValue(target_geom)
+            self.anim.start()
+        else:
+            # Smooth cursor tracking slide
+            self.anim.stop()
+            self.anim.setStartValue(self.geometry())
+            self.anim.setEndValue(target_geom)
+            self.anim.start()
+
+
+class AudioWaveformWidget(QWidget):
+    """
+    A custom canvas widget that renders a rolling, symmetric vertical waveform animation
+    representing real-time PyAudio microphone levels.
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMinimumHeight(40)
+        self.setMaximumHeight(40)
+        self.setMinimumWidth(240)
+        self.history = [0] * 30
+        self.is_light = False
+        
+    def set_level(self, level):
+        self.history.pop(0)
+        self.history.append(level)
+        self.update()
+        
+    def clear(self):
+        self.history = [0] * 30
+        self.update()
+        
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        w = self.width()
+        h = self.height()
+        mid_y = h / 2.0
+        
+        color = QColor("#1e66f5" if self.is_light else "#89b4fa")
+        pen = QPen(color, 2.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        
+        num_bars = len(self.history)
+        spacing = w / num_bars
+        
+        for i, level in enumerate(self.history):
+            # Scale bar height symmetrically
+            bar_h = max(2.0, (level / 100.0) * h)
+            x = i * spacing + spacing / 2.0
+            painter.drawLine(
+                int(x), int(mid_y - bar_h / 2.0),
+                int(x), int(mid_y + bar_h / 2.0)
+            )
 
 
 class NotificationOSD(QWidget):
@@ -298,6 +652,7 @@ class NotificationOSD(QWidget):
     """
     def __init__(self):
         super().__init__()
+        self.is_light = False
         
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
@@ -321,11 +676,15 @@ class NotificationOSD(QWidget):
         self.title_label.setObjectName("title")
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
+        self.waveform_widget = AudioWaveformWidget(self)
+        self.waveform_widget.hide()
+        
         self.subtitle_label = QLabel("Press Ctrl + Space to Toggle", self)
         self.subtitle_label.setObjectName("subtitle")
         self.subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         layout.addWidget(self.title_label)
+        layout.addWidget(self.waveform_widget, alignment=Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.subtitle_label)
         
         main_layout = QVBoxLayout(self)
@@ -344,23 +703,42 @@ class NotificationOSD(QWidget):
         self.timer.setSingleShot(True)
         self.timer.timeout.connect(self.start_fade_out)
 
+    def set_light_theme(self, is_light):
+        self.is_light = is_light
+        self.waveform_widget.is_light = is_light
+
+    def set_audio_level(self, level):
+        self.waveform_widget.show()
+        self.waveform_widget.set_level(level)
+
     def show_message(self, enabled):
         self.timer.stop()
         self.animation.stop()
+        self.waveform_widget.hide()
+        self.waveform_widget.clear()
         
         if enabled:
             title = "HelaKatha: ENABLED"
-            border_color = "rgba(166, 227, 161, 150)" # soft green
-            text_color = "#a6e3a1"
+            if self.is_light:
+                border_color = "rgba(64, 160, 43, 150)" # Latte green
+                text_color = "#40a02b"
+            else:
+                border_color = "rgba(166, 227, 161, 150)" # Mocha green
+                text_color = "#a6e3a1"
         else:
             title = "HelaKatha: DISABLED"
-            border_color = "rgba(243, 139, 168, 150)" # soft red
-            text_color = "#f38ba8"
+            if self.is_light:
+                border_color = "rgba(210, 15, 57, 150)" # Latte red
+                text_color = "#d20f39"
+            else:
+                border_color = "rgba(243, 139, 168, 150)" # Mocha red
+                text_color = "#f38ba8"
             
         self.title_label.setText(title)
         self.subtitle_label.setText("Press Ctrl + Space to Toggle")
         
-        style = OSD_STYLE.replace("%BORDER_COLOR%", border_color).replace("%TEXT_COLOR%", text_color)
+        osd_style_template = OSD_STYLE_LIGHT if self.is_light else OSD_STYLE
+        style = osd_style_template.replace("%BORDER_COLOR%", border_color).replace("%TEXT_COLOR%", text_color)
         self.container.setStyleSheet(style)
         
         self.adjustSize()
@@ -370,14 +748,29 @@ class NotificationOSD(QWidget):
         
         self.timer.start(1200)
 
-    def show_dictation_message(self, title, text, border_color="rgba(137, 180, 250, 150)", text_color="#89b4fa", persistent=False):
+    def show_dictation_message(self, title, text, border_color=None, text_color=None, persistent=False):
         self.timer.stop()
         self.animation.stop()
         
+        # Hide waveform if it's not the listening state
+        if "Listening" not in title:
+            self.waveform_widget.hide()
+            self.waveform_widget.clear()
+            
         self.title_label.setText(title)
         self.subtitle_label.setText(text)
         
-        style = OSD_STYLE.replace("%BORDER_COLOR%", border_color).replace("%TEXT_COLOR%", text_color)
+        # Set default colors if not provided
+        if border_color is None or text_color is None:
+            if self.is_light:
+                border_color = "rgba(30, 102, 245, 150)" # Latte blue
+                text_color = "#1e66f5"
+            else:
+                border_color = "rgba(137, 180, 250, 150)" # Mocha blue
+                text_color = "#89b4fa"
+        
+        osd_style_template = OSD_STYLE_LIGHT if self.is_light else OSD_STYLE
+        style = osd_style_template.replace("%BORDER_COLOR%", border_color).replace("%TEXT_COLOR%", text_color)
         self.container.setStyleSheet(style)
         
         self.adjustSize()
@@ -430,6 +823,8 @@ class LanguageBar(QWidget):
 
     def __init__(self):
         super().__init__()
+        self.is_light = False
+        self.is_enabled_mode = True
         
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
@@ -481,6 +876,11 @@ class LanguageBar(QWidget):
         self.position_default()
         self.show()
 
+    def set_light_theme(self, is_light):
+        self.is_light = is_light
+        self.separator.setStyleSheet("color: rgba(30, 102, 245, 80);" if is_light else "color: rgba(137, 180, 250, 80);")
+        self.set_mode(self.is_enabled_mode)
+
     def position_default(self):
         screen = QApplication.primaryScreen().geometry()
         x = screen.width() - self.width() - 40
@@ -488,15 +888,23 @@ class LanguageBar(QWidget):
         self.move(x, y)
 
     def set_mode(self, enabled):
+        self.is_enabled_mode = enabled
+        base_style = LANGBAR_STYLE_LIGHT if self.is_light else LANGBAR_STYLE
         if enabled:
             self.label.setText("සි")
+            accent_color = "#1e66f5" if self.is_light else "#89b4fa"
+            active_color = "#40a02b" if self.is_light else "#a6e3a1"
+            active_bg_color = "rgba(64, 160, 43, 150)" if self.is_light else "rgba(166, 227, 161, 150)"
             self.container.setStyleSheet(
-                LANGBAR_STYLE.replace("#89b4fa", "#a6e3a1").replace("rgba(137, 180, 250, 150)", "rgba(166, 227, 161, 150)")
+                base_style.replace(accent_color, active_color).replace("rgba(137, 180, 250, 150)", active_bg_color).replace("rgba(30, 102, 245, 150)", active_bg_color)
             )
         else:
             self.label.setText("EN")
+            accent_color = "#1e66f5" if self.is_light else "#89b4fa"
+            inactive_color = "#5c5f77" if self.is_light else "#bac2de"
+            inactive_bg_color = "rgba(92, 95, 119, 80)" if self.is_light else "rgba(180, 190, 254, 80)"
             self.container.setStyleSheet(
-                LANGBAR_STYLE.replace("#89b4fa", "#bac2de").replace("rgba(137, 180, 250, 150)", "rgba(180, 190, 254, 80)")
+                base_style.replace(accent_color, inactive_color).replace("rgba(137, 180, 250, 150)", inactive_bg_color).replace("rgba(30, 102, 245, 150)", inactive_bg_color)
             )
 
     def set_mic_state(self, state):
@@ -504,11 +912,11 @@ class LanguageBar(QWidget):
         Updates the microphone icon color to represent idle, listening, or transcribing states.
         """
         if state == "listening":
-            self.mic_label.setStyleSheet("color: #f38ba8;") # soft red/pink
+            self.mic_label.setStyleSheet("color: #d20f39;" if self.is_light else "color: #f38ba8;") # red
         elif state == "transcribing":
-            self.mic_label.setStyleSheet("color: #f9e2af;") # soft yellow
+            self.mic_label.setStyleSheet("color: #df8e1d;" if self.is_light else "color: #f9e2af;") # yellow/orange
         else: # idle
-            self.mic_label.setStyleSheet("color: #a6adc8;") # grey
+            self.mic_label.setStyleSheet("color: #6c6f85;" if self.is_light else "color: #a6adc8;") # grey
 
     # Draggable Window & Click Logic
     def mousePressEvent(self, event):
@@ -544,9 +952,9 @@ class HelpDialog(QDialog):
     A beautiful dark-themed help dialog showing phonetic mapping instructions
     and configuration settings for custom Unicode/Legacy fonts.
     """
-    # Custom signals
-    font_settings_changed = pyqtSignal(str, str, bool)
+    settings_changed = pyqtSignal(str, str, bool, bool, bool)
     shortcut_settings_changed = pyqtSignal(str, str)
+    macro_settings_changed = pyqtSignal(dict)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -791,53 +1199,33 @@ class HelpDialog(QDialog):
         # Legacy toggle Checkbox
         self.legacy_check = QCheckBox("Active Font is Legacy / Normal (e.g. FM Abhaya)", self)
         self.legacy_check.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.legacy_check.setStyleSheet("""
-            QCheckBox {
-                color: #cdd6f4;
-                font-size: 11px;
-            }
-            QCheckBox::indicator {
-                width: 14px;
-                height: 14px;
-            }
-        """)
         self.legacy_check.stateChanged.connect(self.on_settings_changed)
         settings_layout.addWidget(self.legacy_check)
+
+        # Offline Voice Checkbox
+        self.offline_voice_check = QCheckBox("Enable Private, Offline Voice Typing (requires Vosk)", self)
+        self.offline_voice_check.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.offline_voice_check.stateChanged.connect(self.on_settings_changed)
+        settings_layout.addWidget(self.offline_voice_check)
+
+        # Light Theme Checkbox
+        self.light_theme_check = QCheckBox("Use Light Theme Layout", self)
+        self.light_theme_check.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.light_theme_check.stateChanged.connect(self.on_settings_changed)
+        settings_layout.addWidget(self.light_theme_check)
         
         # Action Buttons
         btn_layout = QHBoxLayout()
         
         self.import_btn = QPushButton("Import Font (.ttf)", self)
+        self.import_btn.setObjectName("import_btn")
         self.import_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.import_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #89b4fa;
-                color: #1e1e2e;
-                font-weight: bold;
-                border-radius: 6px;
-                padding: 6px 12px;
-            }
-            QPushButton:hover {
-                background-color: #b4befe;
-            }
-        """)
         self.import_btn.clicked.connect(self.import_font_clicked)
         btn_layout.addWidget(self.import_btn)
         
         self.reset_btn = QPushButton("Reset to Default", self)
+        self.reset_btn.setObjectName("reset_btn")
         self.reset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.reset_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #f38ba8;
-                color: #1e1e2e;
-                font-weight: bold;
-                border-radius: 6px;
-                padding: 6px 12px;
-            }
-            QPushButton:hover {
-                background-color: #f9e2af;
-            }
-        """)
         self.reset_btn.clicked.connect(self.reset_font_clicked)
         btn_layout.addWidget(self.reset_btn)
         
@@ -854,45 +1242,25 @@ class HelpDialog(QDialog):
         
         shortcut_info = QLabel("Click inside the fields and press your desired shortcut keys, then click Done.", self)
         shortcut_info.setWordWrap(True)
-        shortcut_info.setStyleSheet("color: #a6adc8; font-size: 11px; line-height: 14px;")
+        shortcut_info.setObjectName("info_lbl")
         shortcuts_layout.addWidget(shortcut_info)
         
         grid_layout = QGridLayout()
         grid_layout.setSpacing(12)
         
         lbl_toggle = QLabel("Toggle Input Mode (සි/EN):", self)
-        lbl_toggle.setStyleSheet("color: #cdd6f4; font-weight: bold; font-size: 11px;")
+        lbl_toggle.setObjectName("shortcut_lbl")
         grid_layout.addWidget(lbl_toggle, 0, 0)
         
         self.toggle_edit = QKeySequenceEdit(self)
-        self.toggle_edit.setStyleSheet("""
-            QKeySequenceEdit {
-                background-color: rgba(45, 45, 68, 200);
-                color: #bac2de;
-                border: 1px solid rgba(137, 180, 250, 100);
-                border-radius: 6px;
-                padding: 6px;
-                font-weight: bold;
-            }
-        """)
         self.toggle_edit.keySequenceChanged.connect(self.on_shortcuts_changed)
         grid_layout.addWidget(self.toggle_edit, 0, 1)
         
         lbl_voice = QLabel("Toggle Voice Dictation:", self)
-        lbl_voice.setStyleSheet("color: #cdd6f4; font-weight: bold; font-size: 11px;")
+        lbl_voice.setObjectName("shortcut_lbl")
         grid_layout.addWidget(lbl_voice, 1, 0)
         
         self.voice_edit = QKeySequenceEdit(self)
-        self.voice_edit.setStyleSheet("""
-            QKeySequenceEdit {
-                background-color: rgba(45, 45, 68, 200);
-                color: #bac2de;
-                border: 1px solid rgba(137, 180, 250, 100);
-                border-radius: 6px;
-                padding: 6px;
-                font-weight: bold;
-            }
-        """)
         self.voice_edit.keySequenceChanged.connect(self.on_shortcuts_changed)
         grid_layout.addWidget(self.voice_edit, 1, 1)
         
@@ -900,6 +1268,25 @@ class HelpDialog(QDialog):
         shortcuts_layout.addStretch()
         
         self.tabs.addTab(shortcuts_widget, "Shortcuts Settings")
+
+        # ---------------- TAB 4: TEXT MACROS ----------------
+        macros_widget = QWidget()
+        macros_layout = QVBoxLayout(macros_widget)
+        macros_layout.setContentsMargins(15, 15, 15, 15)
+        macros_layout.setSpacing(10)
+        
+        macros_info = QLabel("Define custom text macros below (format: shortcut = expansion). One per line.", self)
+        macros_info.setWordWrap(True)
+        macros_info.setObjectName("info_lbl")
+        macros_layout.addWidget(macros_info)
+        
+        self.macros_edit = QTextEdit(self)
+        self.macros_edit.setPlaceholderText("e.g.\nhk = හෙළකත\nty = බොහොම ස්තූතියි")
+        self.macros_edit.setObjectName("macros_edit")
+        self.macros_edit.textChanged.connect(self.on_macros_changed)
+        macros_layout.addWidget(self.macros_edit)
+        
+        self.tabs.addTab(macros_widget, "Text Macros")
         layout.addWidget(self.tabs)
         
         # Main Close Button
@@ -918,8 +1305,13 @@ class HelpDialog(QDialog):
         self.current_font_path = ""
         self.current_font_family = ""
         self.current_is_legacy = False
+        self.is_light = False
 
-    def load_initial_settings(self, path, family, is_legacy, shortcut_toggle="Ctrl+Space", shortcut_voice="Ctrl+Alt+S"):
+    def set_light_theme(self, is_light):
+        self.is_light = is_light
+        self.setStyleSheet(HELP_DIALOG_STYLE_LIGHT if is_light else HELP_DIALOG_STYLE)
+
+    def load_initial_settings(self, path, family, is_legacy, shortcut_toggle="Ctrl+Space", shortcut_voice="Ctrl+Alt+S", is_offline_voice=False, is_light_theme=False, macros_dict=None):
         """
         Populate UI elements on dialog show.
         """
@@ -931,6 +1323,14 @@ class HelpDialog(QDialog):
         self.legacy_check.blockSignals(True)
         self.legacy_check.setChecked(is_legacy)
         self.legacy_check.blockSignals(False)
+
+        self.offline_voice_check.blockSignals(True)
+        self.offline_voice_check.setChecked(is_offline_voice)
+        self.offline_voice_check.blockSignals(False)
+
+        self.light_theme_check.blockSignals(True)
+        self.light_theme_check.setChecked(is_light_theme)
+        self.light_theme_check.blockSignals(False)
         
         if path:
             self.font_path_lbl.setText(path)
@@ -948,6 +1348,15 @@ class HelpDialog(QDialog):
         self.voice_edit.blockSignals(True)
         self.voice_edit.setKeySequence(QKeySequence(shortcut_voice))
         self.voice_edit.blockSignals(False)
+
+        # Load macros
+        if macros_dict is not None:
+            macro_lines = []
+            for k, v in macros_dict.items():
+                macro_lines.append(f"{k} = {v}")
+            self.macros_edit.blockSignals(True)
+            self.macros_edit.setPlainText("\n".join(macro_lines))
+            self.macros_edit.blockSignals(False)
 
     def import_font_clicked(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -990,13 +1399,29 @@ class HelpDialog(QDialog):
 
     def on_settings_changed(self):
         self.current_is_legacy = self.legacy_check.isChecked()
-        self.font_settings_changed.emit(
+        is_offline_voice = self.offline_voice_check.isChecked()
+        is_light_theme = self.light_theme_check.isChecked()
+        self.settings_changed.emit(
             self.current_font_path,
             self.current_font_family,
-            self.current_is_legacy
+            self.current_is_legacy,
+            is_offline_voice,
+            is_light_theme
         )
 
     def on_shortcuts_changed(self):
         toggle_str = self.toggle_edit.keySequence().toString()
         voice_str = self.voice_edit.keySequence().toString()
         self.shortcut_settings_changed.emit(toggle_str, voice_str)
+
+    def on_macros_changed(self):
+        text = self.macros_edit.toPlainText()
+        parsed_macros = {}
+        for line in text.split("\n"):
+            if "=" in line:
+                parts = line.split("=", 1)
+                key = parts[0].strip().lower()
+                val = parts[1].strip()
+                if key and val:
+                    parsed_macros[key] = val
+        self.macro_settings_changed.emit(parsed_macros)

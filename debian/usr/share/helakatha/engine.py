@@ -1,4 +1,68 @@
 import re
+import os
+import json
+import datetime
+
+def parse_macro_variables(text, clipboard_text=""):
+    if not text:
+        return ""
+        
+    now = datetime.datetime.now()
+    
+    # Replace [date] -> YYYY-MM-DD
+    if "[date]" in text:
+        text = text.replace("[date]", now.strftime("%Y-%m-%d"))
+        
+    # Replace [time] -> HH:MM
+    if "[time]" in text:
+        text = text.replace("[time]", now.strftime("%H:%M"))
+        
+    # Replace [clip] -> current clipboard text
+    if "[clip]" in text:
+        text = text.replace("[clip]", clipboard_text)
+        
+    return text
+
+def get_user_dict_path():
+    home = os.path.expanduser("~")
+    return os.path.join(home, ".gemini", "antigravity-cli", "user_dict.json")
+
+def get_bigram_dict_path():
+    home = os.path.expanduser("~")
+    return os.path.join(home, ".gemini", "antigravity-cli", "bigram_dict.json")
+
+def get_macros_path():
+    home = os.path.expanduser("~")
+    return os.path.join(home, ".gemini", "antigravity-cli", "macros.json")
+
+SINHALA_SPELLING_CORRECTIONS = {
+    "කරුනා": "කරුණා",
+    "කරුනාව": "කරුණාව",
+    "ප්‍රස්නය": "ප්‍රශ්නය",
+    "පිලිතුර": "පිළිතුර",
+    "පිලිතුරු": "පිළිතුරු",
+    "ස්තූති": "ස්තුතියි",
+    "බොහෝම": "බොහොම",
+    "විසේස": "විශේෂ",
+    "ප්‍රර්තනා": "ප්‍රාර්ථනා",
+    "ප්‍රර්ථනා": "ප්‍රාර්ථනා",
+    "උදව්": "උදවු",
+}
+
+EMOJI_DICTIONARY = {
+    "smi": ["😊", "😄", "😀", "🙂"],
+    "hea": ["❤️", "💖", "💙", "💔"],
+    "lk": ["🇱🇰", " সিংহ", "ලංකාව"],
+    "ok": ["👍", "👌", "✅"],
+    "no": ["❌", "👎", "🚫"],
+    "con": ["🎉", "🎊", "🎈"],
+    "wav": ["👋", "✋", "🤚"],
+    "laa": ["😂", "🤣", "😆"],
+    "sad": ["😢", "😭", "😞", "😔"],
+    "fir": ["🔥", "💥", "⚡"],
+    "cop": ["💻", "🖥️", "⌨️"],
+    "pho": ["📱", "📞", "☎️"]
+}
 
 class TransliterationEngine:
     def __init__(self):
@@ -144,6 +208,132 @@ class TransliterationEngine:
             "kala": ["කාලය", "කළා", "කරලා"],
             "puluwan": ["පුළුවන්", "පුළුවනි"]
         }
+        self.user_dictionary = {}
+        self.bigram_dictionary = {}
+        self.macros = {}
+        self.load_user_dictionary()
+        self.load_bigram_dictionary()
+        self.load_macros()
+
+    def load_user_dictionary(self):
+        try:
+            path = get_user_dict_path()
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    self.user_dictionary = json.load(f)
+        except Exception as e:
+            print(f"Error loading user dictionary: {e}")
+
+    def save_user_dictionary(self):
+        try:
+            path = get_user_dict_path()
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(self.user_dictionary, f, ensure_ascii=False, indent=4)
+        except Exception as e:
+            print(f"Error saving user dictionary: {e}")
+
+    def learn_word(self, singlish_text, selected_word):
+        if not singlish_text or not selected_word:
+            return
+        singlish_text = singlish_text.lower().strip()
+        selected_word = selected_word.strip()
+        
+        # Don't learn raw English words
+        if selected_word == singlish_text:
+            return
+            
+        if singlish_text not in self.user_dictionary:
+            self.user_dictionary[singlish_text] = {}
+            
+        self.user_dictionary[singlish_text][selected_word] = self.user_dictionary[singlish_text].get(selected_word, 0) + 1
+        self.save_user_dictionary()
+
+    def load_bigram_dictionary(self):
+        try:
+            path = get_bigram_dict_path()
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    self.bigram_dictionary = json.load(f)
+        except Exception as e:
+            print(f"Error loading bigram dictionary: {e}")
+
+    def save_bigram_dictionary(self):
+        try:
+            path = get_bigram_dict_path()
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(self.bigram_dictionary, f, ensure_ascii=False, indent=4)
+        except Exception as e:
+            print(f"Error saving bigram dictionary: {e}")
+
+    def learn_bigram(self, wordA, wordB):
+        if not wordA or not wordB:
+            return
+        wordA = wordA.strip()
+        wordB = wordB.strip()
+        
+        # Don't learn English
+        if wordA.isascii() or wordB.isascii():
+            return
+            
+        if wordA not in self.bigram_dictionary:
+            self.bigram_dictionary[wordA] = {}
+            
+        self.bigram_dictionary[wordA][wordB] = self.bigram_dictionary[wordA].get(wordB, 0) + 1
+        self.save_bigram_dictionary()
+
+    def get_predictions(self, previous_word):
+        if not previous_word:
+            return []
+        previous_word = previous_word.strip()
+        
+        default_bigrams = {
+            "මම": ["යනවා", "ගෙදර", "කනවා", "ඔයාට", "ලංකාවේ"],
+            "ඔයා": ["කොහොමද", "හොඳින්", "මොකද", "යනවාද"],
+            "සුබ": ["දවසක්", "පැතුම්", "උදෑසනක්", "අලුත්"],
+            "ශ්‍රී": ["ලංකාව", "ලංකා", "ලංකාවේ"],
+            "ස්තූතියි": ["ඔයාට", "බොහෝම", "හැමෝටම"],
+            "ගෙදර": ["යනවා", "ගියා", "එනවා"]
+        }
+        
+        predictions = []
+        user_bigrams = self.bigram_dictionary.get(previous_word, {})
+        sorted_user_bigrams = sorted(user_bigrams.keys(), key=lambda w: user_bigrams[w], reverse=True)
+        for m in sorted_user_bigrams:
+            predictions.append(m)
+            
+        defaults = default_bigrams.get(previous_word, [])
+        for m in defaults:
+            if m not in predictions:
+                predictions.append(m)
+                
+        return predictions[:5]
+
+    def load_macros(self):
+        try:
+            path = get_macros_path()
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    self.macros = json.load(f)
+            else:
+                self.macros = {
+                    "hk": "හෙළකත",
+                    "ty": "බොහොම ස්තූතියි",
+                    "gm": "සුබ උදෑසනක්"
+                }
+                self.save_macros()
+        except Exception as e:
+            print(f"Error loading macros: {e}")
+
+    def save_macros(self):
+        try:
+            path = get_macros_path()
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(self.macros, f, ensure_ascii=False, indent=4)
+        except Exception as e:
+            print(f"Error saving macros: {e}")
 
     def transliterate(self, text):
         if not text:
@@ -187,26 +377,64 @@ class TransliterationEngine:
 
         return result
 
-    def get_candidates(self, text):
+    def get_candidates(self, text, clipboard_text=""):
         """
         Returns a list of suggestions (max 5) for the typed Singlish word.
-        The first candidate is always the direct transliteration.
-        Subsequent candidates are looked up from the dictionary.
-        The raw English text is always included as one of the options (usually the last).
+        Integrates spelling corrections, macros/expansions, emoji lookups, and auto-learned frequencies.
         """
         if not text:
             return []
 
-        direct_trans = self.transliterate(text)
-        candidates = [direct_trans]
-
         clean_text = text.lower().strip()
         
+        # Check emoji search (starts with :)
+        if clean_text.startswith(":"):
+            term = clean_text[1:]
+            candidates = []
+            if not term:
+                candidates = ["😊", "❤️", "👍", "🔥", "🎉"]
+            else:
+                for key, val in EMOJI_DICTIONARY.items():
+                    if key.startswith(term):
+                        for emoji in val:
+                            if emoji not in candidates:
+                                candidates.append(emoji)
+            if not candidates:
+                candidates.append(text)
+            return candidates[:5]
+
+        # Check macros first
+        if clean_text in self.macros:
+            macro_val = parse_macro_variables(self.macros[clean_text], clipboard_text)
+            candidates = [macro_val]
+        else:
+            candidates = []
+
+        direct_trans = self.transliterate(text)
+        
+        # Check spelling auto-corrections on the direct transliteration
+        if direct_trans in SINHALA_SPELLING_CORRECTIONS:
+            corrected = SINHALA_SPELLING_CORRECTIONS[direct_trans]
+            if corrected not in candidates:
+                candidates.append(corrected)
+                
+        if direct_trans not in candidates:
+            candidates.append(direct_trans)
+
+        # 1. Fetch user learned matches (sorted by frequency descending)
+        user_matches = self.user_dictionary.get(clean_text, {})
+        sorted_user_matches = sorted(user_matches.keys(), key=lambda w: user_matches[w], reverse=True)
+        for m in sorted_user_matches:
+            if m not in candidates:
+                candidates.append(m)
+
+        # 2. Fetch default dict matches
         dict_matches = self.dictionary.get(clean_text, [])
         for m in dict_matches:
             if m not in candidates:
                 candidates.append(m)
 
+        # 3. Add starts-with default dict suggestions if list is small
         if len(candidates) < 4:
             for key, val in self.dictionary.items():
                 if len(candidates) >= 4:
@@ -216,6 +444,7 @@ class TransliterationEngine:
                         if m not in candidates and len(candidates) < 4:
                             candidates.append(m)
 
+        # 4. Add raw text at the end
         if text not in candidates:
             if len(candidates) >= 5:
                 candidates[4] = text
